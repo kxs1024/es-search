@@ -102,7 +102,14 @@ behaves identically.
 > glue fine; NOT does not — prefer the split form for it.
 
 Prefix-functions (`ext:`, `size:`, `dm:`, `dupe:`, `path:`, `regex:`) always
-take ONE argv: glue the argument with `:` or wrap in `<...>`.
+take ONE argv: glue the argument right after the `:`.
+
+> `<...>` after a prefix groups a **sub-expression** (e.g. `dupe:<ext:mp3>`,
+> `sizedupe:<size:>100mb>`) — it does **not** quote a literal value that
+> contains spaces. `path:<Program Files>` returns **0**. For a literal value
+> with spaces (a path, a phrase), use inner double quotes from a PS
+> single-quoted string — `'path:"C:\Program Files"'` — or the dedicated flag
+> (`-path "C:\Program Files"`), which sidesteps quoting entirely.
 
 ## Quick reference
 
@@ -625,7 +632,16 @@ the argv rule from the top of this doc.
   history-expansion operators.
 - Inside a double-quoted PS string, embedded `"` must be backtick-escaped:
   `es "\`"exact phrase\`""`. Single-quoted PS strings need no escape:
-  `es '"exact phrase"'`.
+  `es '"exact phrase"'` — **prefer the single-quoted form**, it hands es a
+  clean `"` and is the most reliable way to pass quotes.
+- **Never let a literal `\"` reach es** (backslash-escaped quote). es uses a
+  custom command-line parser that does not understand the `\"` escape
+  ([voidtools/ES#7](https://github.com/voidtools/ES/issues/7)), so it
+  mis-splits the argument and returns a **silently wrong result, not an
+  error**. Verified on 1.1.0.37: `es 'path:"Program Files"' ext:exe` → 5112,
+  but `es 'path:\"Program Files\"' ext:exe` → 2000. If you need quotes around
+  a value with spaces, use a PS single-quoted string (clean `"`) or the
+  `-path` / `-parent` flags — never construct `\"` by hand.
 - For literal strings without variable expansion, prefer single quotes:
   `es 'size:>2gb' '!attrib:H'`.
 - The pipe `|` inside an Everything OR query MUST be inside a quoted token —
