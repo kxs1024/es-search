@@ -14,6 +14,26 @@ It accepts the full **Everything search syntax**
 (https://www.voidtools.com/support/everything/searching/) plus CLI-specific
 switches (https://www.voidtools.com/support/everything/command_line_interface/).
 
+> Every rule, count, and example below was empirically verified against
+> **`es.exe` 1.1.0.37** (the current release, https://github.com/voidtools/ES)
+> talking to **Everything 1.4.1.1024**. A few features are gated on newer
+> components and are flagged inline (e.g. `-get-folder-size` needs the
+> Everything 1.5 folder-size index). Get `es.exe` from the
+> [GitHub releases](https://github.com/voidtools/ES/releases).
+
+## Target shell: PowerShell
+
+**Run `es.exe` from PowerShell.** Every example here is written for (and was
+verified in) Windows PowerShell — the quoting rules, the argv-tokenization
+rule below, and the `Out-String | ConvertFrom-Json` idiom all assume it.
+
+> **Do NOT call `es` through Git Bash / MSYS / WSL.** MSYS auto-converts any
+> argument that starts with `/` into a Windows path, so DIR-style switches
+> like `/a-d`, `/ad`, `/on`, `/os` are silently mangled (e.g. `/a-d` →
+> `C:\…\a-d`) and the query returns **0** with no error. These work fine in
+> PowerShell. If you must use a POSIX shell, use the dash forms (`-a-d`, no
+> `/`-switches) or the `file:` / `folder:` prefix syntax instead.
+
 ## Availability check
 
 Before using `es.exe`, verify it is reachable:
@@ -30,16 +50,21 @@ Quick availability check pattern:
 ```powershell
 $esOutput = es -version 2>&1
 if ($LASTEXITCODE -eq 8) {
-    # Everything service not running
-} elseif ($LASTEXITCODE -ne 0 -and -not ($esOutput -match 'ES ')) {
-    # es.exe not installed
+    # Everything service not running — fall back
+} elseif ($LASTEXITCODE -ne 0 -or $esOutput -notmatch '^\d+\.\d+') {
+    # es.exe not installed / not on PATH — fall back
 }
+# else: available; $esOutput holds the version, e.g. "1.1.0.37"
 ```
 
-Note: `es` uses **single-dash** long flags (`-version`, `-help`, `-regex`).
-GNU-style `--version` returns "Error 6: Unknown switch" — but the help text
-is still printed to stderr, which can mislead automated checks. Match on the
-`ES ` prefix in stdout, not on exit code alone.
+Note: `es` uses **single-dash** long flags (`-version`, `-help`, `-regex`),
+but on 1.1.0.37 the GNU-style `--version` / `--help` also work — es collapses
+the doubled dash (per its own rule "internal `-`'s can be omitted"), so both
+print the version and exit 0. `es -version` prints just the bare version
+string (`1.1.0.37`), **not** an `ES …` banner — match it with a
+`\d+\.\d+` version pattern, not on a literal `ES ` prefix. A genuinely unknown
+switch (e.g. `-zzz`) is what returns "Error 6: Unknown switch" with the full
+help dumped to stderr.
 
 ## CRITICAL: argv tokenization rule
 
@@ -55,20 +80,26 @@ es -get-result-count "*.log !temp"          # → 0
 es -get-result-count "<*.cpp | *.h> !test"  # → 0
 
 # RIGHT (option A) — each operator/operand is its own argv
-es -get-result-count "*.cpp" "|" "*.h"            # → 104 631
-es -get-result-count "*.log" "!temp"              # → 4 270
+es -get-result-count "*.cpp" "|" "*.h"            # → 106 691
+es -get-result-count "*.log" "!temp"              # → 4 611
 es -get-result-count "<*.cpp" "|" "*.h>" "!test"  # works
 
 # RIGHT (option B) — single argv, NO spaces around operators
-es -get-result-count "*.cpp|*.h"            # → 104 631
-es -get-result-count "*.log!temp"           # AND-NOT, no space
-es -get-result-count "<*.cpp|*.h>!test"     # grouping, no spaces
+es -get-result-count "*.cpp|*.h"            # → 106 691  (OR glues fine)
+es -get-result-count "<*.cpp|*.h>!test"     # grouping + NOT glued — works
 ```
 
 Empirical rule: if you need spaces between operators (for readability) — split
 into separate quoted argv elements. Otherwise glue everything inside one
 quoted string. This is **not a PowerShell quirk** — `cmd /c 'es "*.cpp | *.h"'`
 behaves identically.
+
+> **NOT (`!`) is the exception to glue-without-spaces.** A bare term followed
+> immediately by `!` — `*.log!temp` — returns **0** (the `!` is not recognized
+> as the NOT operator after a wildcard term). Always give NOT its own argv:
+> `"*.log" "!temp"` (→ 4 611). Glued NOT only works when the left side is a
+> grouping that closes with `>`, e.g. `<*.cpp|*.h>!test`. OR (`|`) and grouping
+> glue fine; NOT does not — prefer the split form for it.
 
 Prefix-functions (`ext:`, `size:`, `dm:`, `dupe:`, `path:`, `regex:`) always
 take ONE argv: glue the argument with `:` or wrap in `<...>`.
@@ -80,7 +111,7 @@ take ONE argv: glue the argument with `:` or wrap in `<...>`.
 | Wildcard | `*.log`, `config*.json`, `?ame.txt` | single |
 | AND (default) | `report` `2024` (two argv) or `*report*2024*` | split / glued |
 | OR | `*.cpp` `\|` `*.h` (three argv) or `*.cpp\|*.h` | split / glued |
-| NOT | `*.log` `!temp` (two argv) or `*.log!temp` | split / glued |
+| NOT | `*.log` `!temp` (two argv — glued `*.log!temp` returns 0) | split |
 | Grouping | `<*.cpp\|*.h>!test` (one argv, no spaces) | glued |
 | Exact phrase | `"my file.txt"` (escape inner quotes from PS) | single |
 | Extension list | `ext:cpp;h;hpp` | single |
@@ -98,11 +129,12 @@ take ONE argv: glue the argument with `:` or wrap in `<...>`.
 | Duplicates by name | `dupe:<expr>` | single |
 | Duplicates by size | `sizedupe:<expr>` | single |
 | Limit results | `-n 50` | flag |
-| Offset / pagination | `-o 100 -n 50` | flag |
+| Paginate (window) | `-viewport-offset 100 -viewport-count 50` | flag |
 | Count only | `-get-result-count` | flag |
 | Sum file sizes (bytes) | `-get-total-size` | flag |
 | Sort | `-sort size-descending` | flag |
-| Structured output | `-csv` / `-tsv` / `-efu` (no JSON) | flag |
+| Structured output | `-csv` / `-tsv` / `-json` / `-efu` | flag |
+| Match diacritics | `-a` / `-diacritics` | flag |
 
 ## Core search patterns
 
@@ -126,12 +158,10 @@ es "*.cpp" "|" "*.h"
 # OR (single argv, no spaces)
 es "*.cpp|*.h"
 
-# AND-NOT (two argv)
+# AND-NOT — give NOT its own argv (glued "*.log!temp" returns 0, see above)
 es "*.log" "!temp"
-# AND-NOT (single argv, no spaces)
-es "*.log!temp"
 
-# Grouping — easiest as single argv with no spaces
+# Grouping — easiest as single argv with no spaces (glued NOT works after `>`)
 es "<*.cpp|*.h>!build"
 
 # AND (default) — two argv equivalent to substring1 AND substring2 in name
@@ -217,8 +247,22 @@ es "size:>1gb" -sort size-descending -size
 es -n 20 "ext:mp4" -sort size-descending -size -date-modified
 ```
 
-`-size`, `-date-modified`, `-dm`, `-dc`, `-da` are **column flags** that add
-columns to the output. Without them only the path is printed.
+**Column flags** add columns to the output; without any, only the path is
+printed. The full set:
+
+| Flag (aliases) | Column |
+|----------------|--------|
+| `-name` | filename only |
+| `-path-column` | parent path only |
+| `-full-path-and-name` (`-filename-column`) | full path + name |
+| `-extension` (`-ext`) | extension |
+| `-size` | size |
+| `-date-modified` (`-dm`) / `-date-created` (`-dc`) / `-date-accessed` (`-da`) | dates |
+| `-date-run` / `-run-count` | run history |
+| `-date-recently-changed` (`-rc`) | recently-changed time |
+| `-attributes` (`-attrib`) | attributes |
+| `-filelist-filename` | source file-list |
+| `-<property-name>` / `-add-columns a;b;c` | arbitrary indexed properties |
 
 ## Filtering by date
 
@@ -332,11 +376,23 @@ it isn't enabled, use `ext:` + `size:` heuristics instead.
 ## Limiting & paginating results
 
 ```powershell
-es -n 20 "*.tmp"                # first 20 matches
-es -o 100 -n 20 "*.tmp"         # results 101..120
-es -get-result-count "*.cpp"    # just the number, no listing
-es -get-total-size "size:>2gb"  # sum of file sizes in bytes, no listing
+es -n 20 "*.tmp"                                  # first 20 matches (-n = max to find)
+es -viewport-offset 100 -viewport-count 20 "*.tmp"  # results 101..120 (window)
+es -get-result-count "*.cpp"                      # just the number, no listing
+es -get-total-size "size:>2gb"                    # sum of file sizes in bytes, no listing
+es -get-folder-size "C:\Projects"                 # total size of a folder (Everything 1.5+ only*)
 ```
+
+`-n` / `-count` caps how many results es *finds*; `-viewport-offset` /
+`-viewport-count` choose the window of found results to *print* — together
+they give pagination. The old `-o` / `-offset` switches were removed in newer
+es builds; on 1.1.0.37 they no longer page (e.g. `-o 5` silently yields
+nothing), so always use the `-viewport-*` pair.
+
+> *`-get-folder-size` needs Everything 1.5's folder-size index. On Everything
+> 1.4.1.1024 it returns `Error 8: Everything IPC not found` even though the
+> service is running — treat a folder-size failure as "feature not available",
+> not "Everything down".
 
 ## Sorting
 
@@ -347,9 +403,12 @@ es "ext:cpp" -sort path-ascending
 ```
 
 Valid keys: `name`, `path`, `size`, `extension`, `date-created`,
-`date-modified`, `date-accessed`, `attributes`, `run-count`,
-`date-recently-changed`, `date-run`. Each accepts `-ascending` / `-descending`
-suffix; or set direction globally with `-sort-ascending` / `-sort-descending`.
+`date-modified`, `date-accessed`, `attributes`, `filelist-filename`,
+`run-count`, `date-recently-changed`, `date-run`, or any indexed
+`<property-name>`. Each accepts `-ascending` / `-descending` suffix; or set
+direction globally with `-sort-ascending` / `-sort-descending`. DIR-style
+shortcuts also work: `/on /o-n /os /o-s /oe /o-e /od /o-d` (name/size/ext/date,
+`-` = descending).
 
 ## Output format
 
@@ -365,40 +424,80 @@ es "size:>1gb" -size -dm -sort size-descending
 #  ^size         ^modified date  ^path (always last)
 ```
 
-### Structured export
+### Structured output & export
+
+Seven display formats double as export targets. Pass the format flag to write
+to stdout, or the matching `-export-*` flag to write a file:
+
+| Format | stdout | to file |
+|--------|--------|---------|
+| CSV | `-csv` | `-export-csv out.csv` |
+| TSV | `-tsv` | `-export-tsv out.tsv` |
+| **JSON** | `-json` | `-export-json out.json` |
+| EFU (Everything native) | `-efu` | `-export-efu out.efu` |
+| TXT (one path per line) | `-txt` | `-export-txt out.txt` |
+| M3U / M3U8 (playlists) | `-m3u` / `-m3u8` | `-export-m3u8 out.m3u8` |
 
 ```powershell
-es "*.sln" -csv                          # CSV to stdout
 es "*.sln" -tsv                          # TSV to stdout (safer than CSV for paths)
 es "*.sln" -export-csv results.csv       # CSV to file
-es "*.sln" -export-tsv results.tsv       # TSV to file
-es "*.sln" -export-efu results.efu       # Everything's native format
+es "*.sln" -export-json results.json     # JSON to file
 es "ext:mp3" -export-m3u8 playlist.m3u8
+es "*.log" -export-csv out.csv -utf8-bom # UTF-8 BOM → Excel opens it correctly
 ```
 
 **Column behavior**:
-- `-csv` / `-tsv` (stdout and `-export-csv`/`-export-tsv`) output **only the
-  Filename column by default**. To include more, pass column flags
-  explicitly: `-size -dm -dc -ext -attributes`.
+- `-csv` / `-tsv` / `-json` (stdout and their `-export-*`) output **only the
+  Filename column by default**. To include more, pass column flags explicitly:
+  `-size -dm -dc -ext -attributes` (see the **Column flags** table above).
 - `-efu` (stdout and `-export-efu`) **always** emits a fixed set:
   Filename, Size, Date Modified, Date Created, Attributes — column flags are
   ignored.
+- `-no-header` drops the header row for CSV / TSV / EFU.
+
+### JSON output — preferred for parsing in PowerShell
+
+`-json` is the cleanest format to consume programmatically — no
+delimiter/quoting headaches. **Pipe through `Out-String` before
+`ConvertFrom-Json`:**
 
 ```powershell
-# CSV with size + modification date
-es "ext:iso" -csv -size -dm -sort size-descending
+es -json -size -dm "ext:log" | Out-String | ConvertFrom-Json |
+    Where-Object { $_.size -gt 1MB }
 ```
 
-EFU, TSV, and CSV are easy to parse from PowerShell with
-`Import-Csv` (use `-Delimiter \"`t\"` for TSV).
+> **Why `Out-String`:** es prints the JSON array across multiple lines (one
+> object per line). Windows PowerShell 5.1 captures that as a `string[]` and
+> its `ConvertFrom-Json` mishandles multi-line array input — the naive
+> `es … | ConvertFrom-Json` is **flaky** (sometimes empty). `Out-String`
+> joins the lines into one string first, which parses deterministically.
+> PowerShell 7+ doesn't need it, but `Out-String` is harmless there too.
+
+JSON keys follow the columns you request. With **no** column flag the default
+key is `filename` (full path); `-name` switches it to `name` (filename only);
+`-size` adds `size`; `-dm` adds `date_modified`; `-ext` adds `extension`; etc.
+
+> **Dates in JSON default to FILETIME** (a big integer like
+> `134241387105761504`), *not* a readable string. Add `-date-format 1` to get
+> ISO-8601 text:
+>
+> ```powershell
+> es -json -dm -date-format 1 -name -n 1 "ext:dll"
+> # [{"date_modified":"2026-05-25T01:25:10","name":"..."}]
+> ```
+
+CSV / TSV / EFU remain easy to parse with `Import-Csv` (use
+`-Delimiter "`t"` for TSV).
 
 ### Format tweaks
 
 ```powershell
-es ... -size-format 1        # 0=auto, 1=bytes, 2=KB, 3=MB
-es ... -date-format 1        # 0=system, 1=ISO-8601, 2=FILETIME, 3=ISO-UTC
+es ... -size-format 1        # 0=auto, 1=Bytes, 2=KB, 3=MB
+es ... -date-format 1        # 0=auto, 1=ISO-8601, 2=FILETIME, 3=ISO-8601(UTC),
+                             # 4=User Locale, 5=ISO-8601 full, 6=ISO-8601(UTC) full
 es ... -no-digit-grouping    # no thousands separators
-es ... -no-header            # omit CSV header
+es ... -no-header            # omit CSV/TSV/EFU header
+es ... -double-quote         # wrap every path/filename in double quotes (txt output)
 ```
 
 ## Case sensitivity — `-i` IS NOT ignore-case!
@@ -421,6 +520,31 @@ es -w "claude"           # whole word
 es -ww "claude"          # synonym
 es "wholeword:claude"    # prefix form
 ```
+
+## Other match modifiers
+
+```powershell
+es -a "café"             # -a / -diacritics: "café" no longer matches "cafe"
+es -prefix "config"      # match start of words only
+es -suffix "test"        # match end of words only
+es -ignore-punctuation "read.me"   # ignore punctuation in filenames
+es -ignore-whitespace "my file"    # ignore whitespace in filenames
+```
+
+By default es is **diacritic-insensitive** (`café` matches `cafe`); `-a`
+makes it strict. Each modifier also has a `<name>:` prefix form
+(`diacritics:`, etc.) usable inside grouped queries.
+
+## Introspection / maintenance switches
+
+```powershell
+es -version                 # es.exe version (e.g. 1.1.0.37)
+es -get-everything-version  # the running Everything service version
+es -timeout 5000 "*.cfg"    # wait up to 5 s for the DB to load before querying
+```
+
+`-timeout` is handy in scripts that run right after boot, before Everything
+has finished loading its index.
 
 ## Combined examples
 
@@ -456,6 +580,10 @@ es -sort size-descending -n 50 -size -dm `
 
 # How much disk space is taken by files >2 GB total? (bytes)
 es -get-total-size "size:>2gb"
+
+# Parse results as objects: 5 largest DLLs >1 MB as PowerShell objects
+es -json -size -sort size-descending -n 5 "ext:dll" "size:>1mb" |
+    Out-String | ConvertFrom-Json | Select-Object filename, size
 ```
 
 ## Interpreting exit codes
@@ -463,8 +591,8 @@ es -get-total-size "size:>2gb"
 | Code | Meaning |
 |------|---------|
 | 0 | Success — including the "0 results" case unless `-no-result-error` is set |
-| 6 | Unknown switch (e.g. GNU-style `--version`); help is still printed to stderr |
-| 8 | Everything service is not running — fall back |
+| 6 | Unknown switch (e.g. `-zzz`); full help is printed to stderr. NB: `--version`/`--help` are accepted on 1.1.0.37, so they do **not** trigger this |
+| 8 | `Everything IPC not found` — service not running (fall back) **or** the requested IPC isn't supported by this Everything version (e.g. `-get-folder-size` on Everything 1.4). If other queries succeed, it's the latter — don't fall back. |
 | 9 | No results — only when `-no-result-error` is passed |
 
 ## Escaping literal special chars in filenames (`^`)

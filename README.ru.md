@@ -23,9 +23,14 @@
 - Windows 10 или новее
 - [Everything](https://www.voidtools.com/downloads/) с запущенной
   службой индексирования
-- [Everything Command-line Interface (`es.exe`)](https://www.voidtools.com/downloads/#cli)
-  в `PATH`
+- [Everything Command-line Interface (`es.exe`)](https://github.com/voidtools/ES/releases)
+  в `PATH` — **версия 1.1.0.37 или новее** (в более ранних сборках нет
+  JSON-вывода и используется удалённая пагинация `-o` / `-offset`)
 - Установленный [Claude Code](https://docs.claude.com/en/docs/claude-code)
+
+Скачайте `es.exe` со [страницы релизов voidtools/ES на GitHub](https://github.com/voidtools/ES/releases)
+(на 64-битной Windows берите zip с `x64`) и распакуйте в каталог из `PATH` —
+например `%LOCALAPPDATA%\Microsoft\WindowsApps`.
 
 Проверка доступности CLI:
 
@@ -33,7 +38,7 @@
 es -version
 ```
 
-Ожидаемый вывод — что-то вроде `1.1.0.30` и exit code 0.
+Ожидаемый вывод — `1.1.0.37` (или новее) и exit code 0.
 
 > **Совет.** Чем больше опций индексирования включено в Everything
 > (**Сервис → Настройки... → Индексирование**), тем больше
@@ -65,9 +70,12 @@ Claude Code автоматически подхватывает скиллы и�
 - Фильтров по размеру, дате (изменения / создания / доступа) и
   атрибутам
 - Поиска дубликатов (`dupe:`, `sizedupe:`, `dmdupe:`, `attribdupe:`)
-- Сортировки, пагинации, агрегатов (`-get-result-count`,
-  `-get-total-size`)
-- Форматов вывода (CSV / TSV / EFU / M3U8) с особенностями колонок
+- Сортировки, viewport-пагинации, агрегатов (`-get-result-count`,
+  `-get-total-size`, `-get-folder-size`)
+- Форматов вывода (JSON / CSV / TSV / EFU / TXT / M3U8) с особенностями
+  колонок — JSON предпочтителен для парсинга через `ConvertFrom-Json`
+- Модификаторов поиска: регистр (`-i`), целые слова (`-w`), диакритика
+  (`-a`), prefix / suffix, игнор пунктуации / пробелов
 - Подвоха с регистром (`-i` означает **match-case**, то есть
   противоположно POSIX-овскому `grep -i`)
 - Различия `empty:` и `size:0` (пустые **папки** vs zero-byte **файлы**)
@@ -78,7 +86,7 @@ Claude Code автоматически подхватывает скиллы и�
   `Get-ChildItem`, когда Everything недоступен
 
 Каждое правило и пример в [`SKILL.md`](SKILL.md) эмпирически проверены
-против `es.exe 1.1.0.30` / Everything 1.4.1.1024.
+против `es.exe 1.1.0.37` / Everything 1.4.1.1024.
 
 ## Что НЕ умеет
 
@@ -93,6 +101,7 @@ Claude Code автоматически подхватывает скиллы и�
 ## Смотрите также
 
 - Полная спецификация скилла: [`SKILL.md`](SKILL.md)
+- Исходники и релизы `es.exe`: <https://github.com/voidtools/ES>
 - Everything search syntax: <https://www.voidtools.com/support/everything/searching/>
 - Everything CLI reference: <https://www.voidtools.com/support/everything/command_line_interface/>
 - Документация Claude Code по скиллам: <https://docs.claude.com/en/docs/claude-code/skills>

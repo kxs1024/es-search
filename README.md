@@ -21,9 +21,14 @@ plus the CLI quirks needed to use it correctly from PowerShell.
 - Windows 10 or later
 - [Everything](https://www.voidtools.com/downloads/) running with its
   indexing service
-- [Everything Command-line Interface (`es.exe`)](https://www.voidtools.com/downloads/#cli)
-  on `PATH`
+- [Everything Command-line Interface (`es.exe`)](https://github.com/voidtools/ES/releases)
+  on `PATH` — **version 1.1.0.37 or later** (earlier builds have no JSON
+  output and use the removed `-o` / `-offset` pagination)
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) installed
+
+Get `es.exe` from the [voidtools/ES GitHub releases](https://github.com/voidtools/ES/releases)
+(pick the `x64` zip on 64-bit Windows) and extract it onto your `PATH` — e.g.
+`%LOCALAPPDATA%\Microsoft\WindowsApps`.
 
 Verify the CLI is reachable:
 
@@ -31,7 +36,7 @@ Verify the CLI is reachable:
 es -version
 ```
 
-You should see something like `1.1.0.30` and exit code 0.
+You should see `1.1.0.37` (or newer) and exit code 0.
 
 > **Tip.** The more indexing options you enable in Everything
 > (**Tools → Options... → Indexes**), the more search capabilities
@@ -62,8 +67,12 @@ The skill documents and gives idiomatic PowerShell examples for:
 - Path scoping (`-path`, `-parent`, `path:`, `-p`)
 - Size, date (modified / created / accessed), and attribute filters
 - Duplicate discovery (`dupe:`, `sizedupe:`, `dmdupe:`, `attribdupe:`)
-- Sorting, pagination, aggregates (`-get-result-count`, `-get-total-size`)
-- Output formats (CSV / TSV / EFU / M3U8) with column behavior notes
+- Sorting, viewport pagination, aggregates (`-get-result-count`,
+  `-get-total-size`, `-get-folder-size`)
+- Output formats (JSON / CSV / TSV / EFU / TXT / M3U8) with column-behavior
+  notes — JSON is the preferred format for parsing via `ConvertFrom-Json`
+- Match modifiers: case (`-i`), whole-word (`-w`), diacritics (`-a`),
+  prefix / suffix, ignore punctuation / whitespace
 - Case-sensitivity gotcha (`-i` means **match-case**, the opposite of
   POSIX `grep -i`)
 - `empty:` vs `size:0` distinction (empty **folders** vs zero-byte **files**)
@@ -73,7 +82,7 @@ The skill documents and gives idiomatic PowerShell examples for:
   `Get-ChildItem` when Everything is unavailable
 
 Every rule and example in [`SKILL.md`](SKILL.md) has been empirically
-verified against `es.exe 1.1.0.30` / Everything 1.4.1.1024.
+verified against `es.exe 1.1.0.37` / Everything 1.4.1.1024.
 
 ## What it does NOT do
 
@@ -87,6 +96,7 @@ verified against `es.exe 1.1.0.30` / Everything 1.4.1.1024.
 ## See also
 
 - The full skill specification: [`SKILL.md`](SKILL.md)
+- `es.exe` source & releases: <https://github.com/voidtools/ES>
 - Everything search syntax: <https://www.voidtools.com/support/everything/searching/>
 - Everything CLI reference: <https://www.voidtools.com/support/everything/command_line_interface/>
 - Claude Code skills documentation: <https://docs.claude.com/en/docs/claude-code/skills>
