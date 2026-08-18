@@ -80,12 +80,12 @@ es -get-result-count "*.log !temp"          # → 0
 es -get-result-count "<*.cpp | *.h> !test"  # → 0
 
 # RIGHT (option A) — each operator/operand is its own argv
-es -get-result-count "*.cpp" "|" "*.h"            # → 106 691
-es -get-result-count "*.log" "!temp"              # → 4 611
+es -get-result-count "*.cpp" "|" "*.h"            # → the real count of both extensions
+es -get-result-count "*.log" "!temp"              # → all .log files, minus "temp" ones
 es -get-result-count "<*.cpp" "|" "*.h>" "!test"  # works
 
 # RIGHT (option B) — single argv, NO spaces around operators
-es -get-result-count "*.cpp|*.h"            # → 106 691  (OR glues fine)
+es -get-result-count "*.cpp|*.h"            # → same real count  (OR glues fine)
 es -get-result-count "<*.cpp|*.h>!test"     # grouping + NOT glued — works
 ```
 
@@ -97,9 +97,9 @@ behaves identically.
 > **NOT (`!`) is the exception to glue-without-spaces.** A bare term followed
 > immediately by `!` — `*.log!temp` — returns **0** (the `!` is not recognized
 > as the NOT operator after a wildcard term). Always give NOT its own argv:
-> `"*.log" "!temp"` (→ 4 611). Glued NOT only works when the left side is a
-> grouping that closes with `>`, e.g. `<*.cpp|*.h>!test`. OR (`|`) and grouping
-> glue fine; NOT does not — prefer the split form for it.
+> `"*.log" "!temp"` (→ the real, non-zero count). Glued NOT only works when the
+> left side is a grouping that closes with `>`, e.g. `<*.cpp|*.h>!test`. OR
+> (`|`) and grouping glue fine; NOT does not — prefer the split form for it.
 
 Prefix-functions (`ext:`, `size:`, `dm:`, `dupe:`, `path:`, `regex:`) always
 take ONE argv: glue the argument right after the `:`.
@@ -124,7 +124,7 @@ take ONE argv: glue the argument right after the `:`.
 | Extension list | `ext:cpp;h;hpp` | single |
 | Files only | `/a-d` | single |
 | Folders only | `/ad` | single |
-| Path scope | `-path "C:\dir"` | flag + value |
+| Path scope | `-path "C:\dir"` — a drive root **needs** the trailing `\`: `-path "D:\"`, never `-path D:` (see pitfall below) | flag + value |
 | Match against full path | `-p` or `path:foo` | flag / prefix |
 | Regex | `-r "pattern"` (alone) or `regex:pattern` | flag / prefix |
 | Size | `size:>2gb`, `size:1gb..5gb`, `size:empty` | single |
@@ -196,6 +196,34 @@ es -path "D:\Logs" "ext:log"
 
 `-path` restricts results to files **inside** the given directory tree.
 For *parent folder only* (no recursion) use `-parent "C:\dir"`.
+
+> **PITFALL — a bare drive letter in `-path` is that drive's *current
+> directory*, not the whole drive.** `-path D:` is resolved as a Win32 path,
+> and Windows keeps a **separate cwd per drive letter**, so it silently narrows
+> the search to whatever directory the shell last used on D:. You get a
+> plausible, non-empty, **wrong** result — no error, no warning. Always write
+> the trailing backslash: `-path "D:\"`.
+>
+> Verified on es 1.1.0.37 (identical in PowerShell and Git Bash, so this is
+> es/Win32 semantics, not MSYS mangling). Given a drive `D:` holding several
+> copies of `notes.txt` in different trees:
+>
+> ```powershell
+> Set-Location D:\work\alpha
+> es -path D:    notes.txt   # only the copies under D:\work\alpha  ← WRONG
+> es -path "D:\" notes.txt   # every copy on the drive
+> Set-Location D:\work\beta
+> es -path D:    notes.txt   # a DIFFERENT subset — it follows the cwd
+> ```
+>
+> The **prefix form is immune**: `path:D:` is a plain substring match against
+> the full path, not a resolved path, so it covers the whole drive. `es
+> "path:D:" notes.txt` is safe while `es -path D: notes.txt` is not.
+>
+> **The sanity check for any suspiciously small result set: drop the `-path`
+> filter and compare counts.** A drive-wide search is just as instant, so an
+> under-reporting `-path` is cheap to catch — and never conclude "the Everything
+> index is stale/incomplete" from a filtered query alone.
 
 ### Regex search
 
@@ -309,7 +337,7 @@ These are NOT synonyms — a common mistake:
 - **`size:0`** (or `size:empty`) matches **zero-byte files**.
 
 ```powershell
-es -get-result-count "empty:"           # empty FOLDERS (e.g. 137 671 here)
+es -get-result-count "empty:"           # empty FOLDERS (easily tens of thousands)
 es -get-result-count "empty:" "/ad"     # same — folders only
 es -get-result-count "empty:" "/a-d"    # 0 — empty: doesn't apply to files
 es -get-result-count "size:0"           # zero-byte FILES
@@ -340,7 +368,7 @@ To find duplicates of a specific filename across the system, just search for
 the name — `dupe:` is only needed when *discovering* duplicates by category:
 
 ```powershell
-es "CMakeLists.txt"           # all copies of this name (894 across my drives)
+es "CMakeLists.txt"           # every copy of this name across the indexed drives
 ```
 
 Sort by name to keep duplicate groups adjacent in the output:
@@ -427,7 +455,7 @@ is fixed by es**: extra columns (size, dates, attributes, ext) are printed
 
 ```powershell
 es "size:>1gb" -size -dm -sort size-descending
-# 4,608,819,200 13/04/2022 12:10 Z:\HYPER-V\ISO\Windows.iso
+# 4,608,819,200 13/04/2022 12:10 D:\iso\Windows.iso
 #  ^size         ^modified date  ^path (always last)
 ```
 
@@ -566,7 +594,7 @@ es -n 10 -sort size-descending -size "size:>1gb"
 es -path "D:\" -size -sort size-descending "size:>2gb" "ext:iso"
 
 # Source files modified today in current project
-es -path "Z:\PROJECTS\MyApp" -dm "dm:today" "ext:cpp;h;qml"
+es -path "D:\Projects\MyApp" -dm "dm:today" "ext:cpp;h;qml"
 
 # Hidden files in user profile (files only, hidden attribute)
 es -path "$env:USERPROFILE" "attrib:H" "/a-d"
@@ -638,8 +666,9 @@ the argv rule from the top of this doc.
   custom command-line parser that does not understand the `\"` escape
   ([voidtools/ES#7](https://github.com/voidtools/ES/issues/7)), so it
   mis-splits the argument and returns a **silently wrong result, not an
-  error**. Verified on 1.1.0.37: `es 'path:"Program Files"' ext:exe` → 5112,
-  but `es 'path:\"Program Files\"' ext:exe` → 2000. If you need quotes around
+  error**. Verified on 1.1.0.37: `es 'path:"Program Files"' ext:exe` returns the
+  full set, while `es 'path:\"Program Files\"' ext:exe` returns a much smaller
+  subset — both non-empty, so nothing looks broken. If you need quotes around
   a value with spaces, use a PS single-quoted string (clean `"`) or the
   `-path` / `-parent` flags — never construct `\"` by hand.
 - For literal strings without variable expansion, prefer single quotes:

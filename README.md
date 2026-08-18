@@ -64,7 +64,10 @@ The skill documents and gives idiomatic PowerShell examples for:
 - Boolean operators (AND / OR / NOT / grouping) with the **critical**
   argv-tokenization rule (the single biggest pitfall when calling `es.exe`
   from PowerShell)
-- Path scoping (`-path`, `-parent`, `path:`, `-p`)
+- Path scoping (`-path`, `-parent`, `path:`, `-p`) — including the
+  bare-drive-letter pitfall: `-path D:` means that drive's **current
+  directory**, not the drive (`-path "D:\"` does), and it under-reports
+  silently
 - Size, date (modified / created / accessed), and attribute filters
 - Duplicate discovery (`dupe:`, `sizedupe:`, `dmdupe:`, `attribdupe:`)
 - Sorting, viewport pagination, aggregates (`-get-result-count`,
